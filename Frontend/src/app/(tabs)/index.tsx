@@ -1,16 +1,26 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useState, useEffect } from 'react';
-import * as FileSystem from 'expo-file-system';
-import { Play, FileAudio, FolderOpen } from 'lucide-react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Play, FileAudio, FolderOpen, FileText } from 'lucide-react-native';
 
 interface RecordingFile {
   name: string;
   uri: string;
   id: string;
+  date: string;
+  time: string;
+  timestamp: number;
+  formattedSize: string;
 }
 
+interface Section {
+  title: string;
+  data: RecordingFile[];
+}
+import { extractDateFromFilename, extractContactName } from '../../utils/fileParser';
+
 export default function HomeScreen() {
-  const [recordings, setRecordings] = useState<RecordingFile[]>([]);
+  const [recordings, setRecordings] = useState<Section[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentFolderUri, setCurrentFolderUri] = useState<string | null>(null);
 
@@ -48,23 +58,90 @@ export default function HomeScreen() {
       
       // Read all files in the chosen directory using StorageAccessFramework
       const files = await FileSystem.StorageAccessFramework.readDirectoryAsync(folderUri);
+      console.log("Raw files from directory:", files);
       
-      // Filter for audio files (add more extensions if needed)
-      const audioFiles = files
-        .filter(file => file.endsWith('.m4a') || file.endsWith('.wav') || file.endsWith('.mp3'))
-        .map((fileUri, index) => {
-          // Extract just the file name from the end of the URI for display
-          const decodedUri = decodeURIComponent(fileUri);
-          const fileName = decodedUri.split('/').pop() || `Audio_${index}`;
-          
-          return {
-            name: fileName,
-            uri: fileUri,
-            id: index.toString()
-          };
-        });
+      // Filter for audio files
+      const audioUris = files.filter(file => file.endsWith('.m4a') || file.endsWith('.wav') || file.endsWith('.mp3'));
+      
+      const filePromises = audioUris.map(async (fileUri, index) => {
+        const decodedUri = decodeURIComponent(fileUri);
+        const fileName = decodedUri.split('/').pop() || `Audio_${index}`;
+        
+        let dateStr = "Unknown Date";
+        let timeStr = "";
+        let timestamp = 0;
+        let formattedSize = "";
+        
+        // 1. Try to extract date from the filename first
+        const parsedDate = extractDateFromFilename(fileName);
+        if (parsedDate) {
+          dateStr = parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          timeStr = parsedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+          timestamp = parsedDate.getTime();
+        }
+        
+        try {
+          const info = await FileSystem.getInfoAsync(fileUri);
+          console.log("File info:", info);
+          if (info.exists) {
+            // Get Size
+            if (info.size) {
+              const sizeInMB = (info.size / (1024 * 1024)).toFixed(2);
+              formattedSize = `${sizeInMB} MB`;
+            }
 
-      setRecordings(audioFiles);
+            // Get Date/Time from metadata as fallback
+            if (info.modificationTime) {
+              const ms = info.modificationTime < 10000000000 ? info.modificationTime * 1000 : info.modificationTime;
+              const dateObj = new Date(ms);
+              
+              // Only use fallback date if filename parsing failed
+              if (!parsedDate) {
+                dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                timestamp = ms;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Could not get info for", fileUri);
+        }
+        
+        // Extract a clean display name (e.g., "Yash Solanki" or "+918031314653")
+        const displayName = extractContactName(fileName);
+        
+        return {
+          name: displayName,
+          uri: fileUri,
+          id: index.toString(),
+          date: dateStr,
+          time: timeStr,
+          timestamp,
+          formattedSize
+        };
+      });
+
+      const audioFiles = await Promise.all(filePromises);
+      console.log("Parsed audio files data:", JSON.stringify(audioFiles, null, 2));
+
+      // Group by date
+      const grouped = audioFiles.reduce((acc: {[key: string]: RecordingFile[]}, file) => {
+        if (!acc[file.date]) acc[file.date] = [];
+        acc[file.date].push(file);
+        return acc;
+      }, {});
+
+      // Convert grouped object to sections array and sort by date descending
+      const sections: Section[] = Object.keys(grouped).map(date => ({
+        title: date,
+        data: grouped[date].sort((a, b) => b.timestamp - a.timestamp)
+      })).sort((a, b) => {
+        if (a.title === "Unknown Date") return 1;
+        if (b.title === "Unknown Date") return -1;
+        return b.data[0].timestamp - a.data[0].timestamp;
+      });
+
+      setRecordings(sections);
     } catch (error) {
       console.error("Error reading folder:", error);
       Alert.alert("Error", "Could not read the selected folder.");
@@ -80,11 +157,19 @@ export default function HomeScreen() {
       </View>
       <View style={styles.recordingInfo}>
         <Text style={styles.recordingName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.recordingDate}>Tap to play or view transcript</Text>
+        <Text style={styles.recordingDate}>
+          {item.time ? `${item.time} ` : ''}
+          {item.formattedSize ? `• ${item.formattedSize}` : ''}
+        </Text>
       </View>
-      <TouchableOpacity style={styles.playButton}>
-        <Play color="#E2E8F0" size={20} />
-      </TouchableOpacity>
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity style={styles.actionButton}>
+          <FileText color="#E2E8F0" size={20} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionButton}>
+          <Play color="#E2E8F0" size={20} />
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 
@@ -117,12 +202,16 @@ export default function HomeScreen() {
           <Text style={styles.emptySubText}>Try selecting a different folder.</Text>
         </View>
       ) : (
-        <FlatList
-          data={recordings}
+        <SectionList
+          sections={recordings}
           keyExtractor={(item) => item.id}
           renderItem={renderRecordingItem}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.sectionHeader}>{title}</Text>
+          )}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
+          stickySectionHeadersEnabled={false}
         />
       )}
     </View>
@@ -159,6 +248,13 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingBottom: 20,
   },
+  sectionHeader: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+    marginTop: 20,
+    marginBottom: 12,
+  },
   recordingCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -190,7 +286,12 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 14,
   },
-  playButton: {
+  actionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  actionButton: {
     padding: 8,
   },
   emptyState: {
