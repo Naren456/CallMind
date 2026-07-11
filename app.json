@@ -8,13 +8,15 @@
     "scheme": "callmind",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png",
+      "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.narendra78.CallMind"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A",
-        "foregroundImage": "./assets/images/icon.png"
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.narendra78.CallMind"
@@ -28,13 +30,11 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0F172A",
-          "image": "./assets/images/transparent.png",
-          "imageWidth": 1
+          "backgroundColor": "#208AEF",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
         }
-      ],
-      "expo-sqlite",
-      "expo-audio"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
