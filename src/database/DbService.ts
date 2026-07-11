@@ -29,7 +29,7 @@ export const initializeDatabase = async (): Promise<void> => {
             deadline_date TEXT ,-- Standardized YYYY-MM-DD string sorting layout
             priority TEXT CHECK(priority IN ('high','medium','low')) DEFAULT 'medium',
             is_completed INTEGER DEFAULT 0,
-            FOREIGN KEY(call_id) REFERENCES calls(id) ON DELETE CASCADE
+            FOREIGN KEY(call_id) REFERENCES calls(id)g ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline_date) WHERE is_completed = 0;`
         );
