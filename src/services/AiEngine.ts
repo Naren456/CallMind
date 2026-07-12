@@ -22,7 +22,7 @@ class AiEngine {
 
     try {
       const whisperModelPath = getLocalModelPath('WHISPER');
-      const llamaModelPath = getLocalModelPath('LLAMA');
+      const gemmaModelPath = getLocalModelPath('GEMMA');
 
       // 1. Mount Local Whisper Context
       this.whisperContext = await initWhisper({
@@ -31,11 +31,11 @@ class AiEngine {
 
       // 2. Mount Local Llama Context Optimized for 2019 ARMv8 CPUs
       this.llamaContext = await initLlama({
-        model: llamaModelPath,
-        use_mlock: true,      // Prevents OS from virtual-swapping active memory layers
-        n_ctx: 1024,          // Constrains KV Cache size to save RAM
-        n_gpu_layers: 0,      // CPU only compilation path to bypass driver crashes
-        n_threads: 4,         // Lock processing to the phone's 4 core performance matrix
+        model: gemmaModelPath,
+        use_mlock: false,     // Disabled on 2019 Android kernels to prevent privilege errors
+        n_ctx: 1024,          // Scaled down to prevent out-of-memory crashes
+        n_gpu_layers: 0,      // Forces pure CPU execution on Exynos chips
+        n_threads: 4,         // Locked precisely to the 4 big high-performance CPU cores
       });
 
       console.log('[AIEngine] All C++ AI memory matrix channels mounted safely.');
