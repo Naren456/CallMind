@@ -4,12 +4,14 @@
     "strict": true,
     "paths": {
       "@/*": [
-        "src/*"
+        "./src/*"
       ],
       "@/assets/*": [
-        "assets/*"
+        "./assets/*"
       ]
-    }
+    },
+    "types": ["react-native"],
+    "jsx": "react-jsx"
   },
   "include": [
     "**/*.ts",

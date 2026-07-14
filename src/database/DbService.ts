@@ -29,8 +29,16 @@ export const initializeDatabase = async (): Promise<void> => {
             deadline_date TEXT ,-- Standardized YYYY-MM-DD string sorting layout
             priority TEXT CHECK(priority IN ('high','medium','low')) DEFAULT 'medium',
             is_completed INTEGER DEFAULT 0,
-            FOREIGN KEY(call_id) REFERENCES calls(id)g ON DELETE CASCADE
+            FOREIGN KEY(call_id) REFERENCES calls(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS cached_audio_files (
+             uri TEXT PRIMARY KEY,
+             name TEXT NOT NULL,
+             parsed_date TEXT,
+             parsed_time TEXT,
+             phone_number TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline_date) WHERE is_completed = 0;`
         );
         console.log('[SQLite Core] Relational schema and indexes deployed successfully.');

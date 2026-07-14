@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StatusBar } from 'react-native';
 import { Stack } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { initializeDatabase } from '../database/DbService';
 
 export default function RootLayout() {
@@ -22,17 +23,17 @@ export default function RootLayout() {
   // Show a clean, minimalist system loader while database tables initialize
   if (!isDatabaseReady) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" />
-        <ActivityIndicator size="large" color="#00F0FF" />
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
+        <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <ActivityIndicator size="large" color="#2563eb" />
+      </SafeAreaView>
     );
   }
 
   return (
-    <>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff' }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <Stack screenOptions={{ headerShown: false }} />
-    </>
+    </SafeAreaView>
   );
 }

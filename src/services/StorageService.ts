@@ -6,8 +6,25 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const STORAGE_KEYS = {
     FOLDER_URI : '@callmind_recordings_folder_uri',
     MANUAL_MODE : '@callmind_is_manual_mode',
+    HAS_ONBOARDED : '@callmind_has_onboarded',
 }
 
+export const checkHasOnboarded = async (): Promise<boolean> => {
+  try {
+    const value = await AsyncStorage.getItem(STORAGE_KEYS.HAS_ONBOARDED);
+    return value === 'true';
+  } catch (e) {
+    return false;
+  }
+};
+
+export const setHasOnboarded = async (value: boolean): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.HAS_ONBOARDED, value.toString());
+  } catch (e) {
+    console.error('[StorageService] Failed to save onboarding state:', e);
+  }
+};
 
 export const getBrandInstructions = (): string => {
   const brand = (Device.brand || '').toLowerCase();
@@ -23,16 +40,14 @@ export const getBrandInstructions = (): string => {
   return 'Select the default system folder where your Phone dialer app saves recorded call audio tracks.';
 };
 
+import * as FileSystem from 'expo-file-system/legacy';
 
 export const requestDirectoryAccess = async (): Promise<string | null> => {
   try {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: '*/*',
-      copyToCacheDirectory: false
-    });
+    const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
 
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const selectedUri = result.assets[0].uri;
+    if (permissions.granted) {
+      const selectedUri = permissions.directoryUri;
       await AsyncStorage.setItem(STORAGE_KEYS.FOLDER_URI, selectedUri);
       await AsyncStorage.setItem(STORAGE_KEYS.MANUAL_MODE, 'false');
       return selectedUri;
@@ -57,4 +72,91 @@ export const importSingleCallLog = async (): Promise<string | null> => {
     console.error('[StorageService] Manual audio asset extraction failed:', error);
   }
   return null;
+};
+
+export const getFolderUri = async (): Promise<string | null> => {
+  try {
+    return await AsyncStorage.getItem(STORAGE_KEYS.FOLDER_URI);
+  } catch (e) {
+    return null;
+  }
+};
+
+export interface AudioFile {
+  uri: string;
+  name: string;
+  parsedDate?: string | null;
+  parsedTime?: string | null;
+  phoneNumber?: string | null;
+}
+
+import { getCachedAudioFiles, upsertCachedAudioFile, getAllCachedAudioFilesList, removeDeletedAudioFiles } from '../database/TaskRepository';
+import { parseMetadataFromFilename } from '../utils/fileUtils';
+
+export const getAudioFilesFromCache = async (): Promise<AudioFile[]> => {
+  return await getAllCachedAudioFilesList();
+};
+
+export const syncAudioFilesWithStorage = async (folderUri: string): Promise<AudioFile[]> => {
+  try {
+    const files = await FileSystem.StorageAccessFramework.readDirectoryAsync(folderUri);
+    const audioExtensions = ['.m4a', '.mp3', '.wav', '.aac', '.amr', '.ogg', '.flac', '.awb'];
+    
+    // Filter out non-audio files
+    const validFileUris: string[] = [];
+    const filesToProcess: string[] = [];
+
+    for (const fileUri of files) {
+      const lowerUri = fileUri.toLowerCase();
+      if (audioExtensions.some(ext => lowerUri.endsWith(ext))) {
+        validFileUris.push(fileUri);
+        filesToProcess.push(fileUri);
+      }
+    }
+
+    // Clean up deleted files from cache
+    await removeDeletedAudioFiles(validFileUris);
+
+    // Fetch current cache map
+    const cacheMap = await getCachedAudioFiles();
+    const isInitialSetup = Object.keys(cacheMap).length === 0;
+    
+    // Process only new files
+    const newFilesToInsert = [];
+    const discoveredNewFiles: AudioFile[] = [];
+
+    for (const fileUri of filesToProcess) {
+      if (!cacheMap[fileUri]) {
+        const decodedUri = decodeURIComponent(fileUri);
+        const parts = decodedUri.split('/');
+        const name = parts[parts.length - 1];
+
+        const metadata = parseMetadataFromFilename(name);
+        const newFile = {
+          uri: fileUri,
+          name,
+          parsedDate: metadata.parsedDate,
+          parsedTime: metadata.parsedTime,
+          phoneNumber: metadata.phoneNumber
+        };
+        newFilesToInsert.push(newFile);
+        
+        // If this is NOT the initial setup, we track it as a new file to auto-process
+        if (!isInitialSetup) {
+          discoveredNewFiles.push(newFile);
+        }
+      }
+    }
+    
+    // Batch insert for massive speedup
+    if (newFilesToInsert.length > 0) {
+      const { upsertCachedAudioFilesBatch } = require('../database/TaskRepository');
+      await upsertCachedAudioFilesBatch(newFilesToInsert);
+    }
+    
+    return discoveredNewFiles;
+  } catch (error) {
+    console.error('[StorageService] Failed to sync audio files:', error);
+    return [];
+  }
 };
