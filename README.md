@@ -1,9 +1,12 @@
-# CallMind
+<p align="center">
+  <img src="./logo.png" width="120" alt="CallMind Logo" />
+  <br />
+  <a href="https://reactnative.dev/"><img src="https://img.shields.io/badge/React_Native-20232A?style=flat&logo=react&logoColor=61DAFB" alt="React Native"></a>
+  <a href="https://expo.dev/"><img src="https://img.shields.io/badge/Expo-1B1F23?style=flat&logo=expo&logoColor=white" alt="Expo"></a>
+  <a href="https://sqlite.org/"><img src="https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white" alt="SQLite"></a>
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![React Native](https://img.shields.io/badge/React_Native-20232A?style=flat&logo=react&logoColor=61DAFB)](https://reactnative.dev/)
-[![Expo](https://img.shields.io/badge/Expo-1B1F23?style=flat&logo=expo&logoColor=white)](https://expo.dev/)
-[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://sqlite.org/)
+# CallMind
 
 CallMind is an intelligent React Native mobile application built with Expo that transforms your raw call recordings into organized, actionable tasks. It seamlessly syncs with your device's call recording folders, provides a clean interface to manage and play back recordings, and uses AI to transcribe conversations and extract pending action items.
 
@@ -71,7 +74,3 @@ To enable the AI capabilities, you will need to configure your API keys within t
 ## Privacy & Security
 
 CallMind processes your files securely. While audio files are temporarily processed via configured third-party transcription services to generate text, your task data and metadata caches are stored strictly locally on your device's SQLite database.
-
-## License
-
-This project is licensed under the MIT License.

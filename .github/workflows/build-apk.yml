@@ -1,0 +1,50 @@
+name: Build Android APK (Local EAS)
+
+on:
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions UI
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🏗 Setup repository
+        uses: actions/checkout@v4
+
+      - name: 🏗 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: 'npm'
+
+      - name: 🏗 Setup Java (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 🏗 Setup Expo and EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }} # Optional, but recommended for syncing keystores
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🚀 Build APK using EAS Local
+        # --local tells EAS to build directly on the runner instead of the cloud
+        run: eas build --platform android --profile production --local --non-interactive --clear-cache
+
+      - name: 📤 Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: callmind-apk
+          # EAS local builds typically output the APK in the project root or in a 'build' directory.
+          # The pattern below catches the generated APK.
+          path: '**/*.apk'
