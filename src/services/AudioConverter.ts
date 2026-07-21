@@ -1,92 +1,60 @@
-import { execute, FFmpegError } from 'ffmpeg-expo';
+import { decodeAudioData } from 'react-native-audio-api';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Buffer } from 'buffer';
 
 export interface ConversionResult {
   success: boolean;
-  outputPath: string | null;
+  /** Float32 PCM ArrayBuffer (mono, 16kHz) ready for whisper.rn's transcribeData() */
+  pcmArrayBuffer: ArrayBuffer | null;
   error?: string;
 }
 
-export const prepareCallFileForWhisper = async (inputUri: string): Promise<ConversionResult> => {
-  let tempInputPath: string | null = null;
-  
-  try {
-    const filename = `normalized_call_${Date.now()}.wav`;
-    const outputUri = `${FileSystem.cacheDirectory}${filename}`;
-    
-    let ffmpegInputUri = inputUri;
+const SAMPLE_RATE = 16000;
 
-    // FFmpeg generally struggles with Android 'content://' SAF URIs.
-    // We copy the file to the local cache directory first to ensure FFmpeg can read it.
+/**
+ * Converts any audio file (M4A, AAC, MP4, WAV, etc.) to raw Float32 PCM samples
+ * at 16kHz mono, suitable for whisper.rn's transcribeData(ArrayBuffer) API.
+ *
+ * Uses react-native-audio-api's decodeAudioData() which uses the platform's native
+ * audio decoder (FFmpeg on Android) — the same pathway as whisper.cpp in Termux.
+ */
+export const prepareCallFileForWhisper = async (
+  inputUri: string,
+): Promise<ConversionResult> => {
+  let localUri = inputUri;
+  let tempInputPath: string | null = null;
+
+  try {
+    // react-native-audio-api cannot read content:// SAF URIs — copy to local cache first
     if (inputUri.startsWith('content://')) {
       tempInputPath = `${FileSystem.cacheDirectory}temp_input_${Date.now()}.m4a`;
-      await FileSystem.copyAsync({
-        from: inputUri,
-        to: tempInputPath
-      });
-      ffmpegInputUri = tempInputPath;
+      await FileSystem.copyAsync({ from: inputUri, to: tempInputPath });
+      localUri = tempInputPath;
     }
 
-    // Strip 'file://' prefix as FFmpeg native binaries expect absolute paths, not URIs
-    const inputPath = ffmpegInputUri.replace(/^file:\/\//, '');
-    const outputPath = outputUri.replace(/^file:\/\//, '');
+    console.log('[AudioConverter] Decoding audio via react-native-audio-api...');
 
-    const ffmpegArgs = [
-      '-y',
-      '-i', inputPath,
-      '-f', 'wav',          // Explicitly set output container to WAV
-      '-acodec', 'pcm_s16le', // 16-bit signed little-endian PCM — audioFormat=1
-      '-ar', '16000',        // 16kHz required by whisper.cpp
-      '-ac', '1',            // Mono channel
-      outputPath
-    ];
+    // decodeAudioData handles M4A/AAC/WAV internally (uses FFmpeg on Android)
+    // Passing SAMPLE_RATE resamples to 16kHz automatically
+    const audioBuffer = await decodeAudioData(localUri, SAMPLE_RATE);
 
-    await execute(ffmpegArgs);
+    const duration = audioBuffer.duration;
+    const channels = audioBuffer.numberOfChannels;
+    console.log(`[AudioConverter] Decoded: ${duration.toFixed(1)}s, ${channels}ch, ${audioBuffer.sampleRate}Hz`);
 
-    // ── Diagnostic: verify output exists and read WAV audioFormat field ──────
-    const outInfo = await FileSystem.getInfoAsync(outputUri);
-    if (!outInfo.exists) {
-      throw new Error('FFmpeg ran but output WAV file was not created.');
-    }
-    console.log(`[AudioConverter] Output WAV size: ${(outInfo as any).size} bytes`);
+    // Get mono channel data (Float32Array, samples in range -1.0 to 1.0)
+    const float32Samples = audioBuffer.getChannelData(0);
 
-    // Read first 24 bytes to inspect the fmt chunk audioFormat field (bytes 20-21)
-    const headerB64 = await FileSystem.readAsStringAsync(outputUri, {
-      encoding: FileSystem.EncodingType.Base64,
-      length: 24,
-      position: 0,
-    });
-    const headerBytes = Uint8Array.from(Buffer.from(headerB64, 'base64'));
-    const audioFormat = headerBytes[20]! | (headerBytes[21]! << 8);
-    console.log(`[AudioConverter] WAV audioFormat field = ${audioFormat} (1=PCM, 3=IEEE_FLOAT, 6=ALAW, 7=ULAW)`);
-    // ────────────────────────────────────────────────────────────────────────
+    console.log(`[AudioConverter] PCM samples: ${float32Samples.length} (~${(float32Samples.length / SAMPLE_RATE).toFixed(1)}s)`);
 
-    // Clean up temporary input file
-    if (tempInputPath) {
-      await FileSystem.deleteAsync(tempInputPath, { idempotent: true }).catch(() => {});
-    }
-
-    return { success: true, outputPath: outputUri };
+    // whisper.rn transcribeData() accepts Float32 ArrayBuffer directly
+    return { success: true, pcmArrayBuffer: float32Samples.buffer };
   } catch (err: any) {
-    console.error('[AudioConverter] Encoding operation failed:', err);
-    
+    const msg = err?.message ?? String(err);
+    console.error('[AudioConverter] Decoding failed:', msg);
+    return { success: false, pcmArrayBuffer: null, error: msg };
+  } finally {
     if (tempInputPath) {
       await FileSystem.deleteAsync(tempInputPath, { idempotent: true }).catch(() => {});
     }
-
-    let errorMessage = err instanceof Error ? err.message : String(err);
-    
-    // Explicitly handle FFmpegError which contains the exact failure output
-    if (err && typeof err === 'object' && 'output' in err) {
-      errorMessage = `FFmpeg failed: ${(err as any).output || 'Unknown error (no output)'}`;
-    }
-
-    return {
-      success: false,
-      outputPath: null,
-      error: errorMessage
-    };
   }
 };
-

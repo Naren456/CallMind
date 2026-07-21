@@ -4,10 +4,11 @@ import { transcribeWithAssemblyAI } from "./CloudTranscriptionService";
 import { prepareCallFileForWhisper } from "./AudioConverter";
 import { getCloudEnabled } from "./StorageService";
 
-// Fallback URL for the whisper model
+// Multilingual Whisper Base model (~142MB) — good accuracy for Hindi/Hinglish/English
+// Upgrade path: ggml-tiny (~75MB) < ggml-base (~142MB) < ggml-small (~466MB)
 const MODEL_URL =
-  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin";
-const MODEL_FILENAME = "ggml-tiny.en.bin";
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin";
+const MODEL_FILENAME = "ggml-base.bin";
 
 export class LocalTranscriptionService {
   private whisperContext: any = null;
@@ -39,18 +40,25 @@ export class LocalTranscriptionService {
   }
 
   /**
-   * Transcribes audio using the local Whisper model.
-   * @param fileUri The URI of the audio file to transcribe.
+   * Transcribes 16-bit PCM samples passed as an ArrayBuffer.
+   * Uses transcribeData() which bypasses WAV header validation entirely.
    */
-  async transcribeLocally(fileUri: string): Promise<string> {
+  async transcribeLocally(pcmArrayBuffer: ArrayBuffer): Promise<string> {
     await this.init();
 
     console.log(
-      `[LocalTranscription] Starting local transcription for ${fileUri}...`,
+      `[LocalTranscription] Starting local transcription (${pcmArrayBuffer.byteLength} bytes of PCM)...`,
     );
-    // Using GPU acceleration as requested in earlier conversation context
-    const options = { language: "en", useGpu: true };
-    const { promise } = this.whisperContext.transcribe(fileUri, options);
+    // Parameters match whisper.cpp CLI defaults for parity with Termux results
+    const options = {
+      language: "en",
+      translate: false,
+      beamSize: 5,    // whisper.cpp default
+      bestOf: 5,      // whisper.cpp default
+      temperature: 0, // deterministic, no random sampling
+    };
+    const { promise } = this.whisperContext.transcribeData(pcmArrayBuffer, options);
+
 
     const { result } = await promise;
     console.log("[LocalTranscription] Local transcription complete.");
@@ -83,13 +91,13 @@ export class LocalTranscriptionService {
       
       onProgress?.("Converting audio for local processing...");
       const conversionResult = await prepareCallFileForWhisper(fileUri);
-      
-      if (!conversionResult.success || !conversionResult.outputPath) {
+
+      if (!conversionResult.success || !conversionResult.pcmArrayBuffer) {
         throw new Error(`Failed to convert audio: ${conversionResult.error}`);
       }
 
       onProgress?.("Attempting local transcription");
-      const text = await this.transcribeLocally(conversionResult.outputPath);
+      const text = await this.transcribeLocally(conversionResult.pcmArrayBuffer);
 
       if (!text || text.length === 0) {
         throw new Error("Local transcription returned empty result.");
