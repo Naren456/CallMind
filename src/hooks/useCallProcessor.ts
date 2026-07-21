@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { prepareCallFileForWhisper } from '../services/AudioConverter';
 import { aiEngine } from '../services/AiEngine';
 import { saveCallAndTasks } from '../database/TaskRepository';
+import { localTranscriptionService } from '../services/LocalTranscriptionService';
 
 export type PipelineStatus = 'idle' | 'converting' | 'transcribing' | 'extracting' | 'saving' | 'failed' | 'success';
 
@@ -27,7 +28,9 @@ export const useCallProcessor = () => {
       }
 
       setStatus('transcribing');
-      const transcript = await aiEngine.transcribeAudioFile(conversion.outputPath);
+      const transcript = await localTranscriptionService.transcribe(conversion.outputPath, (msg) => {
+        console.log(`[Transcription] ${msg}`);
+      });
       if (!transcript) {
         throw new Error('ASR engine returned empty transcript string');
       }
